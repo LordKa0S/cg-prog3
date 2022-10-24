@@ -34,7 +34,13 @@ const INPUT_TRIANGLES_URL = "https://ncsucgclass.github.io/prog3/triangles.json"
 const eye = [0.5, 0.5, -0.5];
 const up = [0, 1, 0];
 const at = [0, 0, 1];
+/**
+ * @type {}
+ */
 const selectionMatrices = [];
+/**
+ * @type {Array<TriangleSet>}
+ */
 const triangleSets = [];
 let selectedSet = -1;
 
@@ -452,32 +458,51 @@ const loadShader = (gl, type, source) => {
 
 /**
  * 
+ * @param {TriangleSet} triangleSet 
+ */
+const getCenter = (triangleSet) => {
+    const factor = triangleSet.triangles.length * 3;
+    const result = [0, 0, 0];
+    for (const triangle of triangleSet.triangles) {
+        for (const vertex of triangle) {
+            const [x, y, z] = triangleSet.vertices[vertex];
+            result[0] += x / factor;
+            result[1] += y / factor;
+            result[2] += z / factor;
+        }
+    }
+    return result;
+};
+
+/**
+ * 
  * @param {KeyboardEvent} event 
  */
 const keyHandler = (event) => {
     event.preventDefault();
+    const changeBy = 0.5;
     if (event.key === "a") {
-        eye[0] += 0.5;
+        eye[0] += changeBy;
     } else if (event.key === "d") {
-        eye[0] -= 0.5;
+        eye[0] -= changeBy;
     } else if (event.key === "w") {
-        eye[2] += 0.5;
+        eye[2] += changeBy;
     } else if (event.key === "s") {
-        eye[2] -= 0.5;
+        eye[2] -= changeBy;
     } else if (event.key === "q") {
-        eye[1] += 0.5;
+        eye[1] += changeBy;
     } else if (event.key === "e") {
-        eye[1] -= 0.5;
+        eye[1] -= changeBy;
     } else if (event.key === "A") {
-        vec3.rotateY(at, at, eye, glMatrix.toRadian(0.5));
+        vec3.rotateY(at, at, eye, glMatrix.toRadian(changeBy));
     } else if (event.key === "D") {
-        vec3.rotateY(at, at, eye, -glMatrix.toRadian(0.5));
+        vec3.rotateY(at, at, eye, -glMatrix.toRadian(changeBy));
     } else if (event.key === "W") {
-        vec3.rotateX(at, at, eye, glMatrix.toRadian(0.5));
-        vec3.rotateX(up, up, eye, glMatrix.toRadian(0.5));
+        vec3.rotateX(at, at, eye, glMatrix.toRadian(changeBy));
+        vec3.rotateX(up, up, eye, glMatrix.toRadian(changeBy));
     } else if (event.key === "S") {
-        vec3.rotateX(at, at, eye, -glMatrix.toRadian(0.5));
-        vec3.rotateX(up, up, eye, -glMatrix.toRadian(0.5));
+        vec3.rotateX(at, at, eye, -glMatrix.toRadian(changeBy));
+        vec3.rotateX(up, up, eye, -glMatrix.toRadian(changeBy));
     } else if (event.key === " ") {
         if (selectedSet !== -1) {
             const scale = 1 / 1.2;
@@ -511,6 +536,78 @@ const keyHandler = (event) => {
         const scale = 1.2;
         const v = [scale, scale, 1];
         mat4.scale(selectionMatrices[selectedSet], selectionMatrices[selectedSet], v);
+    } else if (event.key === "k") {
+        if (selectedSet !== -1) {
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], [changeBy, 0, 0]);
+        }
+    } else if (event.key === ";") {
+        if (selectedSet !== -1) {
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], [-changeBy, 0, 0]);
+        }
+    } else if (event.key === "o") {
+        if (selectedSet !== -1) {
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], [0, 0, changeBy]);
+        }
+    } else if (event.key === "l") {
+        if (selectedSet !== -1) {
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], [0, 0, -changeBy]);
+        }
+    } else if (event.key === "i") {
+        if (selectedSet !== -1) {
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], [0, changeBy, 0]);
+        }
+    } else if (event.key === "p") {
+        if (selectedSet !== -1) {
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], [0, -changeBy, 0]);
+        }
+    } else if (event.key === "K") {
+        if (selectedSet !== -1) {
+            const center = getCenter(triangleSets[selectedSet]);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], center);
+            mat4.rotateY(selectionMatrices[selectedSet], selectionMatrices[selectedSet], changeBy);
+            const reverse = center.map(val => -val);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], reverse);
+        }
+    } else if (event.key === ":") {
+        if (selectedSet !== -1) {
+            const center = getCenter(triangleSets[selectedSet]);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], center);
+            mat4.rotateY(selectionMatrices[selectedSet], selectionMatrices[selectedSet], -changeBy);
+            const reverse = center.map(val => -val);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], reverse);
+        }
+    } else if (event.key === "O") {
+        if (selectedSet !== -1) {
+            const center = getCenter(triangleSets[selectedSet]);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], center);
+            mat4.rotateX(selectionMatrices[selectedSet], selectionMatrices[selectedSet], changeBy);
+            const reverse = center.map(val => -val);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], reverse);
+        }
+    } else if (event.key === "L") {
+        if (selectedSet !== -1) {
+            const center = getCenter(triangleSets[selectedSet]);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], center);
+            mat4.rotateX(selectionMatrices[selectedSet], selectionMatrices[selectedSet], -changeBy);
+            const reverse = center.map(val => -val);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], reverse);
+        }
+    } else if (event.key === "I") {
+        if (selectedSet !== -1) {
+            const center = getCenter(triangleSets[selectedSet]);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], center);
+            mat4.rotateZ(selectionMatrices[selectedSet], selectionMatrices[selectedSet], changeBy);
+            const reverse = center.map(val => -val);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], reverse);
+        }
+    } else if (event.key === "P") {
+        if (selectedSet !== -1) {
+            const center = getCenter(triangleSets[selectedSet]);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], center);
+            mat4.rotateZ(selectionMatrices[selectedSet], selectionMatrices[selectedSet], -changeBy);
+            const reverse = center.map(val => -val);
+            mat4.translate(selectionMatrices[selectedSet], selectionMatrices[selectedSet], reverse);
+        }
     }
     main();
 };
