@@ -31,6 +31,13 @@
 const CANVAS_DEFAULT_SCALE = 6;
 const INPUT_TRIANGLES_URL = "https://ncsucgclass.github.io/prog3/triangles.json"; // triangles file loc
 
+const eye = [0.5, 0.5, -0.5];
+const up = [0, 1, 0];
+const at = [0, 0, 1];
+const selectionMatrices = [];
+const triangleSets = [];
+let selectedSet = -1;
+
 /**
  * Start here
  * @returns 
@@ -56,6 +63,7 @@ const main = async () => {
     const vsSource = `
     attribute vec4 aVertexPosition;
     attribute vec4 aVertexColor;
+    attribute mat4 aSelectionMatrix;
 
     uniform mat4 uModelViewMatrix;
     uniform mat4 uProjectionMatrix;
@@ -63,7 +71,7 @@ const main = async () => {
     varying lowp vec4 vColor;
 
     void main(void) {
-      gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+      gl_Position = uProjectionMatrix * uModelViewMatrix * aSelectionMatrix * aVertexPosition;
       vColor = aVertexColor;
     }
   `;
@@ -94,6 +102,7 @@ const main = async () => {
         attribLocations: {
             vertexPosition: gl.getAttribLocation(shaderProgram, "aVertexPosition"),
             vertexColor: gl.getAttribLocation(shaderProgram, "aVertexColor"),
+            selectionMatrix: gl.getAttribLocation(shaderProgram, "aSelectionMatrix"),
         },
         uniformLocations: {
             projectionMatrix: gl.getUniformLocation(
@@ -104,8 +113,7 @@ const main = async () => {
         },
     };
 
-    const triangleSets = await getInputObjects(INPUT_TRIANGLES_URL);
-
+    await initValuesFromApi();
 
     gl.clearColor(0.0, 0.0, 0.0, 1.0); // Clear to black, fully opaque
     gl.clearDepth(1.0); // Clear everything
@@ -121,8 +129,15 @@ const main = async () => {
     )));
 };
 
+const initValuesFromApi = async () => {
+    if (triangleSets.length === 0) {
+        triangleSets.push(...await getInputObjects(INPUT_TRIANGLES_URL));
+        triangleSets.forEach(() => selectionMatrices.push(mat4.create()));
+    }
+};
+
 const render = (gl, programInfo, buffers, vertexCount) => {
-    drawScene(gl, programInfo, buffers, vertexCount);
+    drawScene(gl, programInfo, buffers, vertexCount, eye, at, up);
 };
 
 /**
@@ -188,6 +203,19 @@ const initBuffers = (gl, triangleSets) => {
     gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
 
+    // Build the selection matrices buffer
+    const selectionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, selectionBuffer);
+    const selectionBufferData = [];
+    triangleSets.forEach((triangleSet, setIndex) => {
+        triangleSet.triangles.forEach(() => {
+            selectionBufferData.push.apply(selectionBufferData, selectionMatrices[setIndex]);
+            selectionBufferData.push.apply(selectionBufferData, selectionMatrices[setIndex]);
+            selectionBufferData.push.apply(selectionBufferData, selectionMatrices[setIndex]);
+        });
+    });
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(selectionBufferData), gl.STATIC_DRAW);
+
     // Build the element array buffer; this specifies the indices
     // into the vertex arrays for each face's vertices.
 
@@ -218,6 +246,7 @@ const initBuffers = (gl, triangleSets) => {
         position: positionBuffer,
         color: colorBuffer,
         indices: indexBuffer,
+        selection: selectionBuffer,
     };
 };
 
@@ -228,10 +257,9 @@ const initBuffers = (gl, triangleSets) => {
  * @param {Object.<string, WebGLBuffer | null>} buffers 
  * @param {number} vertexCount
  */
-const drawScene = (gl, programInfo, buffers, vertexCount) => {
-    const eye = [0.5, 0.5, -0.5];
-    const center = [0.5, 0.5, 0];
-    const up = [0, 1, 0];
+const drawScene = (gl, programInfo, buffers, vertexCount, eye, at, up) => {
+    const center = vec3.create();
+    vec3.add(center, eye, at);
 
     gl.enable(gl.DEPTH_TEST); // Enable depth testing
     gl.depthFunc(gl.LEQUAL); // Near things obscure far things
@@ -305,6 +333,28 @@ const drawScene = (gl, programInfo, buffers, vertexCount) => {
             offset
         );
         gl.enableVertexAttribArray(programInfo.attribLocations.vertexColor);
+    }
+
+    // Tell WebGL how to pull out the transformations from the selectionMatrix buffer
+    // into the selectionMatrix attribute.
+    {
+        const numComponents = 4;
+        const type = gl.FLOAT;
+        const normalize = false;
+        const stride = 64;
+        const offset = 16;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.selection);
+        for (let offsetIdx = 0; offsetIdx < 4; offsetIdx++) {
+            gl.vertexAttribPointer(
+                programInfo.attribLocations.selectionMatrix + offsetIdx,
+                numComponents,
+                type,
+                normalize,
+                stride,
+                offsetIdx * offset,
+            );
+            gl.enableVertexAttribArray(programInfo.attribLocations.selectionMatrix + offsetIdx);
+        }
     }
 
     // Tell WebGL which indices to use to index the vertices
@@ -400,4 +450,72 @@ const loadShader = (gl, type, source) => {
     return shader;
 };
 
-window.onload = main;
+/**
+ * 
+ * @param {KeyboardEvent} event 
+ */
+const keyHandler = (event) => {
+    event.preventDefault();
+    if (event.key === "a") {
+        eye[0] += 0.5;
+    } else if (event.key === "d") {
+        eye[0] -= 0.5;
+    } else if (event.key === "w") {
+        eye[2] += 0.5;
+    } else if (event.key === "s") {
+        eye[2] -= 0.5;
+    } else if (event.key === "q") {
+        eye[1] += 0.5;
+    } else if (event.key === "e") {
+        eye[1] -= 0.5;
+    } else if (event.key === "A") {
+        vec3.rotateY(at, at, eye, glMatrix.toRadian(0.5));
+    } else if (event.key === "D") {
+        vec3.rotateY(at, at, eye, -glMatrix.toRadian(0.5));
+    } else if (event.key === "W") {
+        vec3.rotateX(at, at, eye, glMatrix.toRadian(0.5));
+        vec3.rotateX(up, up, eye, glMatrix.toRadian(0.5));
+    } else if (event.key === "S") {
+        vec3.rotateX(at, at, eye, -glMatrix.toRadian(0.5));
+        vec3.rotateX(up, up, eye, -glMatrix.toRadian(0.5));
+    } else if (event.key === " ") {
+        if (selectedSet !== -1) {
+            const scale = 1 / 1.2;
+            const v = [scale, scale, 1];
+            mat4.scale(selectionMatrices[selectedSet], selectionMatrices[selectedSet], v);
+            selectedSet = -1;
+        }
+    } else if (event.key === "ArrowLeft") {
+        if (selectedSet !== -1) {
+            const scale = 1 / 1.2;
+            const v = [scale, scale, 1];
+            mat4.scale(selectionMatrices[selectedSet], selectionMatrices[selectedSet], v);
+        }
+        selectedSet--;
+        if (selectedSet < 0) {
+            selectedSet = selectionMatrices.length - 1;
+        }
+        const scale = 1.2;
+        const v = [scale, scale, 1];
+        mat4.scale(selectionMatrices[selectedSet], selectionMatrices[selectedSet], v);
+    } else if (event.key === "ArrowRight") {
+        if (selectedSet !== -1) {
+            const scale = 1 / 1.2;
+            const v = [scale, scale, 1];
+            mat4.scale(selectionMatrices[selectedSet], selectionMatrices[selectedSet], v);
+        }
+        selectedSet++;
+        if (selectedSet > selectionMatrices.length - 1) {
+            selectedSet = 0;
+        }
+        const scale = 1.2;
+        const v = [scale, scale, 1];
+        mat4.scale(selectionMatrices[selectedSet], selectionMatrices[selectedSet], v);
+    }
+    main();
+};
+
+window.onload = () => {
+    main();
+    document.addEventListener("keydown", keyHandler);
+};
