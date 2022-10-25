@@ -1,3 +1,7 @@
 # prog3
 
-helper files for the intro cg class's third programming assignment
+- render the input triangles, without lighting
+- light the triangles
+- interactively change view
+- interactively select a model
+- interactively transform the triangles
