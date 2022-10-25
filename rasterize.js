@@ -67,18 +67,42 @@ const main = async () => {
      */
 
     const vsSource = `
+    precision mediump float;
+
     attribute vec4 aVertexPosition;
     attribute vec4 aVertexColor;
     attribute mat4 aSelectionMatrix;
+    attribute vec4 aNormal;
+    attribute vec4 eye;
+    
+    attribute vec4 aAmbient;
+    attribute vec4 aDiffuse;
+    attribute vec4 aSpecular;
 
     uniform mat4 uModelViewMatrix;
     uniform mat4 uProjectionMatrix;
+    uniform vec4 uLightPos;
 
     varying lowp vec4 vColor;
+    varying vec4 vL;
+    varying vec4 vN;
+    varying vec4 vE;
+    varying vec4 f_aDiffuse;
+    varying vec4 f_ambient;
+    varying vec4 f_specular;
 
     void main(void) {
       gl_Position = uProjectionMatrix * uModelViewMatrix * aSelectionMatrix * aVertexPosition;
       vColor = aVertexColor;
+      vec4 lightPos = uModelViewMatrix * uLightPos;
+      vL = normalize(lightPos - aVertexPosition);
+      vN = normalize(aNormal);
+      vE = normalize(eye - aVertexPosition);
+      f_aDiffuse = aDiffuse;
+      f_ambient = aAmbient;
+      f_specular = aSpecular;
+
+      
     }
   `;
 
@@ -87,10 +111,43 @@ const main = async () => {
      */
 
     const fsSource = `
-    varying lowp vec4 vColor;
+    precision mediump float;
+
+    varying vec4 vColor;
+    varying vec4 vL;
+    varying vec4 vN;
+    varying vec4 vE;
+    varying vec4 f_aDiffuse;
+    varying vec4 f_ambient;
+    varying vec4 f_specular;
 
     void main(void) {
-      gl_FragColor = vColor;
+        vec3 VE = vec3(vE[0],vE[1],vE[2]);
+        vec3 VL = vec3(vL[0],vL[1],vL[2]);
+        vec3 VN = vec3(vN[0],vN[1],vN[2]);
+        vec3 rgb = vec3(0,0,0);
+        vec3 hVect = normalize(VE + VL);
+        float nDotL = dot(VN, VL);
+        float nDotH = dot(VN, hVect);
+        for (int colorIndex = 0; colorIndex < 3; colorIndex++) {
+            float colAmb = max(0.0,f_ambient[colorIndex]);
+            float colDif = f_aDiffuse[colorIndex] * max(nDotL, 0.0);
+            float colSpec = max(0.0, f_specular[colorIndex] * pow(max(nDotH, 0.0), 17.0));
+            rgb[colorIndex] = colAmb + colDif + colSpec;
+        }
+
+        gl_FragColor = vec4(rgb[0],rgb[1],rgb[2],1.0);
+      
+    //   float diffuse = max(dot(vL, vN), 0.0);
+    //   vec4 H = normalize(vL + vE);
+    //   float abc = dot(vN,H);
+    //   float ambient_comp = max(0.0,f_ambient[0]);
+    //   float specular = pow(abc,1.0);
+    // //   if (dot(vL, vN) < 0.0)
+    // //     specular = vec4(0.0, 0.0, 0.0, 1.0);
+    //   float fColor = ambient_comp + diffuse + specular;
+      
+      
     }
   `;
 
@@ -109,11 +166,20 @@ const main = async () => {
             vertexPosition: gl.getAttribLocation(shaderProgram, "aVertexPosition"),
             vertexColor: gl.getAttribLocation(shaderProgram, "aVertexColor"),
             selectionMatrix: gl.getAttribLocation(shaderProgram, "aSelectionMatrix"),
+            normal: gl.getAttribLocation(shaderProgram, "aNormal"),
+            ambient: gl.getAttribLocation(shaderProgram, "aAmbient"),
+            diffuse: gl.getAttribLocation(shaderProgram, "aDiffuse"),
+            specular: gl.getAttribLocation(shaderProgram, "aSpecular"),
+            eye: gl.getAttribLocation(shaderProgram, "eye"),
         },
         uniformLocations: {
             projectionMatrix: gl.getUniformLocation(
                 shaderProgram,
                 "uProjectionMatrix"
+            ),
+            lightPos: gl.getUniformLocation(
+                shaderProgram,
+                "uLightPos"
             ),
             modelViewMatrix: gl.getUniformLocation(shaderProgram, "uModelViewMatrix"),
         },
@@ -222,6 +288,44 @@ const initBuffers = (gl, triangleSets) => {
     });
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(selectionBufferData), gl.STATIC_DRAW);
 
+    // Build the normals buffer
+    const normals = [];
+    const normalBuffer = gl.createBuffer();
+    triangleSets.forEach(triangleSet => {
+        triangleSet.triangles.forEach((vertex) => {
+            normals.push.apply(normals, triangleSet.normals[vertex]);
+        });
+    });
+    gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW);
+
+    // Build the ambient buffer
+    const ambients = triangleSets.map(triangleSet => triangleSet.vertices.map(() => [...triangleSet.material.ambient, 1.0]).flat()).flat();
+
+    const ambientBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, ambientBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ambients), gl.STATIC_DRAW);
+
+    // Build the diffuse buffer
+    const diffuses = triangleSets.map(triangleSet => triangleSet.vertices.map(() => [...triangleSet.material.diffuse, 1.0]).flat()).flat();
+
+    const diffuseBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, diffuseBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(diffuses), gl.STATIC_DRAW);
+
+    // Build the specular buffer
+    const speculars = triangleSets.map(triangleSet => triangleSet.vertices.map(() => [...triangleSet.material.specular, 1.0]).flat()).flat();
+
+    const specularBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, specularBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(speculars), gl.STATIC_DRAW);
+
+    const eyes = triangleSets.map(triangleSet => triangleSet.vertices.map(() => [eye, 1.0]).flat()).flat();
+
+    const eyeBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, eyeBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(eyes), gl.STATIC_DRAW);
+
     // Build the element array buffer; this specifies the indices
     // into the vertex arrays for each face's vertices.
 
@@ -253,6 +357,11 @@ const initBuffers = (gl, triangleSets) => {
         color: colorBuffer,
         indices: indexBuffer,
         selection: selectionBuffer,
+        normal: normalBuffer,
+        ambient: ambientBuffer,
+        diffuse: diffuseBuffer,
+        specular: specularBuffer,
+        eye: eyeBuffer,
     };
 };
 
@@ -300,6 +409,7 @@ const drawScene = (gl, programInfo, buffers, vertexCount, eye, at, up) => {
 
     mat4.lookAt(modelViewMatrix, eye, center, up);
 
+    const lightPos = [-0.5, 1.5, -0.5];
 
     // Tell WebGL how to pull out the positions from the position
     // buffer into the vertexPosition attribute
@@ -363,6 +473,106 @@ const drawScene = (gl, programInfo, buffers, vertexCount, eye, at, up) => {
         }
     }
 
+    // Tell WebGL how to pull out the transformations from the normal buffer
+    // into the normal attribute.
+    {
+        const numComponents = 3;
+        const type = gl.FLOAT;
+        const normalize = false;
+        const stride = 0;
+        const offset = 0;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
+        gl.vertexAttribPointer(
+            programInfo.attribLocations.normal,
+            numComponents,
+            type,
+            normalize,
+            stride,
+            offset
+        );
+        gl.enableVertexAttribArray(programInfo.attribLocations.normal);
+    }
+
+    // Tell WebGL how to pull out the transformations from the ambient buffer
+    // into the ambient attribute.
+    {
+        const numComponents = 3;
+        const type = gl.FLOAT;
+        const normalize = false;
+        const stride = 0;
+        const offset = 0;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.ambient);
+        gl.vertexAttribPointer(
+            programInfo.attribLocations.ambient,
+            numComponents,
+            type,
+            normalize,
+            stride,
+            offset
+        );
+        gl.enableVertexAttribArray(programInfo.attribLocations.ambient);
+    }
+
+    // Tell WebGL how to pull out the transformations from the ambient buffer
+    // into the ambient attribute.
+    {
+        const numComponents = 3;
+        const type = gl.FLOAT;
+        const normalize = false;
+        const stride = 0;
+        const offset = 0;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.eye);
+        gl.vertexAttribPointer(
+            programInfo.attribLocations.eye,
+            numComponents,
+            type,
+            normalize,
+            stride,
+            offset
+        );
+        gl.enableVertexAttribArray(programInfo.attribLocations.eye);
+    }
+
+    // Tell WebGL how to pull out the transformations from the diffuse buffer
+    // into the diffuse attribute.
+    {
+        const numComponents = 3;
+        const type = gl.FLOAT;
+        const normalize = false;
+        const stride = 0;
+        const offset = 0;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.diffuse);
+        gl.vertexAttribPointer(
+            programInfo.attribLocations.diffuse,
+            numComponents,
+            type,
+            normalize,
+            stride,
+            offset
+        );
+        gl.enableVertexAttribArray(programInfo.attribLocations.diffuse);
+    }
+
+    // Tell WebGL how to pull out the transformations from the specular buffer
+    // into the specular attribute.
+    {
+        const numComponents = 3;
+        const type = gl.FLOAT;
+        const normalize = false;
+        const stride = 0;
+        const offset = 0;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.specular);
+        gl.vertexAttribPointer(
+            programInfo.attribLocations.specular,
+            numComponents,
+            type,
+            normalize,
+            stride,
+            offset
+        );
+        gl.enableVertexAttribArray(programInfo.attribLocations.specular);
+    }
+
     // Tell WebGL which indices to use to index the vertices
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
 
@@ -376,6 +586,11 @@ const drawScene = (gl, programInfo, buffers, vertexCount, eye, at, up) => {
         programInfo.uniformLocations.projectionMatrix,
         false,
         projectionMatrix
+    );
+    gl.uniformMatrix4fv(
+        programInfo.uniformLocations.lightPos,
+        false,
+        lightPos
     );
     gl.uniformMatrix4fv(
         programInfo.uniformLocations.modelViewMatrix,
