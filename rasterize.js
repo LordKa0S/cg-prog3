@@ -214,9 +214,7 @@ const initBuffers = (gl, triangleSets) => {
     gl.bindBuffer(gl.ARRAY_BUFFER, selectionBuffer);
     const selectionBufferData = [];
     triangleSets.forEach((triangleSet, setIndex) => {
-        triangleSet.triangles.forEach(() => {
-            selectionBufferData.push.apply(selectionBufferData, selectionMatrices[setIndex]);
-            selectionBufferData.push.apply(selectionBufferData, selectionMatrices[setIndex]);
+        triangleSet.vertices.forEach(() => {
             selectionBufferData.push.apply(selectionBufferData, selectionMatrices[setIndex]);
         });
     });
